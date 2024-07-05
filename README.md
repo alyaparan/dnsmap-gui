@@ -1,5 +1,5 @@
 # dnsmap GUI
-##Version 1.0.1
+## Version 1.0.1
 
 dnsmap GUI is a PyQt5-based graphical interface for the dnsmap tool, providing an easy-to-use interface for DNS network mapping.
 
