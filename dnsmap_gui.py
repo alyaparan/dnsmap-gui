@@ -1,8 +1,32 @@
 import sys
 import os
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QTextEdit, QMessageBox, QFileDialog
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import subprocess
+
+class DnsmapWorker(QThread):
+    output_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, command):
+        super().__init__()
+        self.command = command
+
+    def run(self):
+        try:
+            process = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    self.output_signal.emit(output.strip())
+            rc = process.poll()
+            if rc != 0:
+                err_output = process.stderr.read()
+                self.error_signal.emit(f"Error: {err_output}")
+        except Exception as ex:
+            self.error_signal.emit(f"Error: {str(ex)}")
 
 class DnsmapGUI(QWidget):
     def __init__(self):
@@ -40,6 +64,7 @@ class DnsmapGUI(QWidget):
         self.delay_label = QLabel('Delay (ms):')
         self.delay_edit = QLineEdit()
         self.delay_edit.setToolTip('Delay between requests in milliseconds (optional)')
+        self.delay_edit.setText('3000')  # Set default delay to 3000 ms
 
         self.ips_ignore_label = QLabel('IPs to Ignore:')
         self.ips_ignore_edit = QLineEdit()
@@ -139,14 +164,20 @@ class DnsmapGUI(QWidget):
         if ips_ignore:
             command.extend(['-i', ips_ignore])
 
+        # Debug: print the command
+        print(f"Running command: {' '.join(command)}")
+
         try:
             self.output_display.append(f"Running dnsmap for {target}...\n")
-            output = subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True)
-            self.output_display.append(output)
-        except subprocess.CalledProcessError as e:
-            self.output_display.append(f"Error: {e.output}")
+            self.worker = DnsmapWorker(command)
+            self.worker.output_signal.connect(self.display_output)
+            self.worker.error_signal.connect(self.display_output)
+            self.worker.start()
         except Exception as ex:
             self.output_display.append(f"Error: {str(ex)}")
+
+    def display_output(self, output):
+        self.output_display.append(output)
 
     def showMessageBox(self, title, message):
         msg_box = QMessageBox()
